@@ -86,7 +86,10 @@ def test_datasets_crud_operations(client: TestClient):
     # 3. List datasets
     res_list = client.get("/api/v1/datasets")
     assert res_list.status_code == 200
-    assert len(res_list.json()) >= 1
+    data_list = res_list.json()
+    assert "items" in data_list
+    assert data_list["total"] >= 1
+    assert len(data_list["items"]) >= 1
 
     # 4. Get dataset by ID
     res_get = client.get(f"/api/v1/datasets/{ds_id}")
@@ -284,3 +287,90 @@ def test_cors_headers(client: TestClient):
     )
     assert response.status_code == 200
     assert response.headers.get("access-control-allow-origin") in ["http://localhost:3000", "*"]
+
+
+def test_pagination_and_invalid_parameters(client: TestClient):
+    """Verify limit/offset pagination defaults, boundaries, and validation errors."""
+    # 1. Valid pagination with metadata
+    res = client.get("/api/v1/datasets?limit=10&offset=0")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["limit"] == 10
+    assert body["offset"] == 0
+    assert "total" in body
+    assert isinstance(body["items"], list)
+
+    # 2. Invalid limit < 1 should return 422
+    res_zero = client.get("/api/v1/datasets?limit=0")
+    assert res_zero.status_code == 422
+    assert res_zero.json()["error"] is True
+
+    # 3. Invalid limit > 100 should return 422
+    res_large = client.get("/api/v1/datasets?limit=150")
+    assert res_large.status_code == 422
+
+    # 4. Invalid offset < 0 should return 422
+    res_neg = client.get("/api/v1/datasets?offset=-5")
+    assert res_neg.status_code == 422
+
+    # 5. Experiments pagination validation
+    res_exp = client.get("/api/v1/experiments?limit=5&offset=0")
+    assert res_exp.status_code == 200
+    exp_body = res_exp.json()
+    assert exp_body["limit"] == 5
+    assert exp_body["offset"] == 0
+    assert "total" in exp_body
+
+    res_exp_bad = client.get("/api/v1/experiments?limit=-1")
+    assert res_exp_bad.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_sse_replay_for_late_joining_clients():
+    """Verify that late-joining SSE subscribers receive historical events."""
+    from app.services.event_stream import stream_manager
+    test_id = uuid.uuid4()
+
+    # Broadcast events before any client subscribes
+    await stream_manager.broadcast(
+        experiment_id=test_id,
+        event_type="STARTED",
+        data={"run_id": "r1", "progress": 0.0},
+    )
+    await stream_manager.broadcast(
+        experiment_id=test_id,
+        event_type="DATASET_LOADING",
+        data={"run_id": "r1", "progress": 15.0},
+    )
+
+    # Client connects later
+    queue = stream_manager.subscribe(test_id, replay_history=True)
+    try:
+        assert queue.qsize() == 2
+        e1 = queue.get_nowait()
+        assert "event: STARTED" in e1
+        assert '"progress": 0.0' in e1
+
+        e2 = queue.get_nowait()
+        assert "event: DATASET_LOADING" in e2
+        assert '"progress": 15.0' in e2
+    finally:
+        stream_manager.unsubscribe(test_id, queue)
+        stream_manager.clear_history(test_id)
+
+
+def test_postgresql_no_silent_fallback_to_sqlite():
+    """Verify that configuring a PostgreSQL URL does not silently fall back to SQLite."""
+    from app.db.session import get_engine
+
+    unreachable_pg_url = "postgresql+psycopg2://invalid_user:invalid_pass@127.0.0.1:54399/nonexistent_db"
+    
+    # Must fail with PostgreSQL DBAPI or connection error; must NEVER silently fallback to SQLite
+    with pytest.raises((ModuleNotFoundError, Exception)) as exc_info:
+        pg_engine = get_engine(database_url=unreachable_pg_url)
+        with pg_engine.connect():
+            pass
+
+    # Ensure the exception is postgres-specific and does not contain SQLite references
+    assert "sqlite" not in str(exc_info.value).lower()
+

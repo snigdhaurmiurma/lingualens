@@ -46,6 +46,15 @@ class DatasetResponse(BaseModel):
     created_at: datetime
 
 
+class PaginatedDatasetResponse(BaseModel):
+    """Paginated collection of datasets."""
+
+    total: int
+    limit: int
+    offset: int
+    items: list[DatasetResponse]
+
+
 class DocumentCreate(BaseModel):
     """Payload to add a document to a dataset."""
 

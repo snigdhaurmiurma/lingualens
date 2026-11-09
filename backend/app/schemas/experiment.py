@@ -61,6 +61,15 @@ class ExperimentResponse(BaseModel):
     runs: list[ExperimentRunResponse] = Field(default_factory=list)
 
 
+class PaginatedExperimentResponse(BaseModel):
+    """Paginated collection of experiments."""
+
+    total: int
+    limit: int
+    offset: int
+    items: list[ExperimentResponse]
+
+
 class MetricResultItem(BaseModel):
     """Aggregated evaluation metric item."""
 

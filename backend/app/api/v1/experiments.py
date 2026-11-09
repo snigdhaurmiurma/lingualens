@@ -8,7 +8,7 @@ from collections.abc import AsyncGenerator
 from typing import Any
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query as QueryParam, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.session import SessionLocal, get_db
@@ -20,6 +20,7 @@ from app.schemas.experiment import (
     ExperimentResponse,
     ExperimentRunRequest,
     ExperimentRunResponse,
+    PaginatedExperimentResponse,
 )
 from app.services.event_stream import stream_manager
 from app.services.experiment_service import ExperimentService
@@ -60,13 +61,14 @@ def create_experiment(payload: ExperimentCreate, db: Session = Depends(get_db)) 
     )
 
 
-@router.get("", response_model=list[ExperimentResponse], status_code=status.HTTP_200_OK)
+@router.get("", response_model=PaginatedExperimentResponse, status_code=status.HTTP_200_OK)
 def list_experiments(
     limit: int = QueryParam(default=50, ge=1, le=100),
     offset: int = QueryParam(default=0, ge=0),
     db: Session = Depends(get_db),
-) -> list[ExperimentResponse]:
+) -> PaginatedExperimentResponse:
     """List experiments with pagination."""
+    total = db.scalar(select(func.count()).select_from(Experiment)) or 0
     experiments = ExperimentService.list_experiments(session=db, limit=limit, offset=offset)
 
     responses: list[ExperimentResponse] = []
@@ -101,7 +103,12 @@ def list_experiments(
                 runs=run_items,
             )
         )
-    return responses
+    return PaginatedExperimentResponse(
+        total=total,
+        limit=limit,
+        offset=offset,
+        items=responses,
+    )
 
 
 @router.get("/{experiment_id}", response_model=ExperimentResponse, status_code=status.HTTP_200_OK)
@@ -235,6 +242,8 @@ async def stream_experiment_progress(experiment_id: uuid.UUID) -> StreamingRespo
                 try:
                     message = await asyncio.wait_for(queue.get(), timeout=15.0)
                     yield message
+                    if message.startswith("event: COMPLETED") or message.startswith("event: FAILED"):
+                        break
                 except asyncio.TimeoutError:
                     yield ": ping\n\n"
         finally:

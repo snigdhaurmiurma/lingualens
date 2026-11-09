@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query as QueryParam, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -14,6 +14,7 @@ from app.schemas.dataset import (
     DatasetResponse,
     DocumentCreate,
     DocumentResponse,
+    PaginatedDatasetResponse,
     QueryCreate,
     QueryGroupCreate,
     QueryGroupResponse,
@@ -63,13 +64,14 @@ def create_dataset(payload: DatasetCreate, db: Session = Depends(get_db)) -> Dat
     )
 
 
-@router.get("", response_model=list[DatasetResponse], status_code=status.HTTP_200_OK)
+@router.get("", response_model=PaginatedDatasetResponse, status_code=status.HTTP_200_OK)
 def list_datasets(
     limit: int = QueryParam(default=50, ge=1, le=100),
     offset: int = QueryParam(default=0, ge=0),
     db: Session = Depends(get_db),
-) -> list[DatasetResponse]:
+) -> PaginatedDatasetResponse:
     """List datasets with pagination."""
+    total = db.scalar(select(func.count()).select_from(Dataset)) or 0
     datasets = list(
         db.execute(select(Dataset).order_by(Dataset.created_at.desc()).limit(limit).offset(offset))
         .scalars()
@@ -100,7 +102,12 @@ def list_datasets(
                 created_at=d.created_at,
             )
         )
-    return responses
+    return PaginatedDatasetResponse(
+        total=total,
+        limit=limit,
+        offset=offset,
+        items=responses,
+    )
 
 
 @router.get("/{dataset_id}", response_model=DatasetResponse, status_code=status.HTTP_200_OK)
