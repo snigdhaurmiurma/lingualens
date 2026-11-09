@@ -44,6 +44,11 @@ next-env.d.ts
 *.pem
 *.key
 
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
 # IDEs & OS
 .vscode/
 .idea/

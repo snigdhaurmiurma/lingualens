@@ -1,258 +1,396 @@
 # LinguaLens: REST & Streaming API Specification
 
-**Document Version:** 1.0.0  
+**Document Version:** 1.1.0  
 **Base URL:** `/api/v1`  
 **Protocol:** HTTP/1.1 & HTTP/2, Server-Sent Events (SSE) for streaming  
-**Content-Type:** `application/json` (unless multipart for file uploads)  
+**Content-Type:** `application/json` (UTF-8)
 
 ---
 
-## 1. Error Handling Standard
+## 1. Architectural Overview & Design Principles
 
-All non-2xx responses conform to a structured error envelope:
+The LinguaLens REST Gateway is a FastAPI application exposing the domain core, model registry, vector retrieval engine, and statistical evaluation services to the frontend dashboard and CLI consumers.
+
+Key principles:
+1. **Thin Gateway Layer:** Routes delegate domain logic to underlying services (`DatasetService`, `RetrievalService`, `ExperimentService`, `TokenizerInspector`).
+2. **Resource Attribution & Schema Validation:** Strictly enforced using Pydantic v2 schemas with `strict=False` input coercion, RFC-compliant ISO 639-1 language codes, and ISO 15924 script codes.
+3. **Graceful Degradation & Safe Concurrency:**
+   - Long-running evaluation tasks run non-blocking in background executors with thread-safe dedicated sessions.
+   - Real-time progress updates are delivered asynchronously via Server-Sent Events (`text/event-stream`) backed by in-memory `asyncio.Queue` channels.
+4. **Standardized Error Envelope:** All 4xx and 5xx responses conform to a unified error schema.
+
+---
+
+## 2. Error Response Standard
+
+All errors adhere to the following JSON structure:
 
 ```json
 {
-  "error": {
-    "code": "RESOURCE_NOT_FOUND",
-    "message": "The requested dataset 'bn-eval-v1' does not exist.",
-    "details": {},
-    "timestamp": "2026-11-09T15:30:00Z",
-    "request_id": "req-9b814a70"
-  }
+  "error": true,
+  "status_code": 404,
+  "message": "Dataset with ID '3fa85f64-5717-4562-b3fc-2c963f66afa6' does not exist.",
+  "details": null
+}
+```
+
+Validation errors (HTTP 422) return detailed field breakdown:
+
+```json
+{
+  "error": true,
+  "status_code": 422,
+  "message": "Request validation failed",
+  "details": [
+    {
+      "field": "body.retrieval_mode",
+      "issue": "Input should be 'EXACT' or 'VECTOR_INDEX'"
+    }
+  ]
 }
 ```
 
 ---
 
-## 2. API Endpoints
+## 3. Endpoints Inventory
 
-### 2.1 Authentication & Health
+### 3.1 Health & System Catalog
 
-#### `GET /health`
-Returns system status, active database dialect, and PyTorch execution device.
-- **Response 200 OK:**
+#### `GET /api/v1/health`
+Return service status and database connectivity.
+- **Status:** `200 OK`
+- **Response:**
   ```json
   {
     "status": "healthy",
-    "version": "1.0.0",
-    "environment": "production",
-    "device": "cpu",
-    "cuda_available": false,
-    "vector_backend": "numpy_in_memory"
+    "version": "0.1.0",
+    "timestamp": "2026-11-10T02:00:00Z",
+    "database": "connected"
   }
   ```
 
-#### `POST /auth/register` & `POST /auth/login`
-Standard JWT-based bearer authentication.
-
----
-
-### 2.2 Datasets & Query Groups (`/datasets`)
-
-#### `GET /datasets`
-List all registered benchmark datasets with metadata and language counts.
-- **Query Params:** `dataset_type` (`VALIDATED_BENCHMARK`, `DEMONSTRATION`), `limit`, `offset`.
-- **Response 200 OK:**
+#### `GET /api/v1/system/info`
+Return runtime host capability, CPU threading, and registered model list.
+- **Status:** `200 OK`
+- **Response:**
   ```json
   {
-    "total": 3,
-    "items": [
-      {
-        "id": "c6a2b8e0-5a3d-4c3e-9b2f-7d1a5c6e8f01",
-        "name": "Multilingual Intent Retrieval Benchmark",
-        "slug": "mir-benchmark-v1",
-        "version": "1.0.0",
-        "dataset_type": "VALIDATED_BENCHMARK",
-        "supported_languages": ["en", "bn", "bn-Latn", "hi", "ar"],
-        "document_count": 5000,
-        "query_group_count": 250,
-        "query_count": 1250,
-        "content_hash_sha256": "8f4e2c...",
-        "created_at": "2026-11-01T12:00:00Z"
-      }
+    "python_version": "3.11.15",
+    "torch_version": "2.10.0+cpu",
+    "cpu_count": 8,
+    "torch_cpu_threads": 8,
+    "device_default": "cpu",
+    "memory_available_mb": null,
+    "registered_models": [
+      "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+      "intfloat/multilingual-e5-small"
     ]
   }
   ```
 
-#### `POST /datasets/upload`
-Upload a new dataset archive (JSONL or ZIP containing `queries.jsonl`, `documents.jsonl`, `qrels.jsonl`).
-- **Content-Type:** `multipart/form-data`
-- **Form Fields:** `name`, `version`, `dataset_type`, `file`
-- **Validation:** Enforces maximum file size (100MB), valid schema structure, and ISO codes.
-
-#### `GET /datasets/{id}/query-groups`
-Retrieve paired query groups for inspection in the Query Lab.
-
----
-
-### 2.3 Model Registry & Tokenizer Inspector (`/models`)
-
-#### `GET /models`
-List available embedding model adapters.
-- **Response 200 OK:**
+#### `GET /api/v1/models`
+List available multilingual embedding adapters and metadata.
+- **Status:** `200 OK`
+- **Response:**
   ```json
   [
     {
-      "id": "m1-minilm",
-      "model_identifier": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+      "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
       "display_name": "Paraphrase Multilingual MiniLM L12 v2",
+      "provider": "Hugging Face / Sentence-Transformers",
       "parameter_count": 117000000,
       "embedding_dimension": 384,
-      "max_sequence_length": 512,
+      "max_sequence_length": 128,
       "license": "Apache-2.0",
       "query_prefix": "",
-      "supports_cross_encoder": false,
-      "is_active": true
+      "document_prefix": "",
+      "supported_languages": ["en", "bn", "bn-Latn", "hi", "ar"],
+      "requires_gpu": false,
+      "is_loaded": false
     },
     {
-      "id": "m2-e5-small",
-      "model_identifier": "intfloat/multilingual-e5-small",
+      "model_id": "intfloat/multilingual-e5-small",
       "display_name": "Multilingual E5 Small",
+      "provider": "Microsoft / intfloat",
       "parameter_count": 118000000,
       "embedding_dimension": 384,
       "max_sequence_length": 512,
       "license": "MIT",
       "query_prefix": "query: ",
       "document_prefix": "passage: ",
-      "supports_cross_encoder": false,
-      "is_active": true
+      "supported_languages": ["en", "bn", "bn-Latn", "hi", "ar"],
+      "requires_gpu": false,
+      "is_loaded": false
     }
   ]
   ```
 
-#### `POST /models/tokenize-inspect`
-Inspect how different tokenizers split multilingual and transliterated strings.
-- **Request Body:**
+---
+
+### 3.2 Benchmark Datasets (`/api/v1/datasets`)
+
+#### `POST /api/v1/datasets`
+Create a new benchmark dataset entity.
+- **Request:**
   ```json
   {
-    "model_id": "m2-e5-small",
-    "text": "amar sonar bangla",
-    "language_code": "bn-Latn"
+    "name": "Clinical Cross-Lingual IR Benchmark",
+    "slug": "clinical-crosslingual-v1",
+    "description": "Multilingual healthcare queries and passages",
+    "version": "1.0.0",
+    "dataset_type": "BENCHMARK",
+    "license": "CC-BY-4.0",
+    "source_uri": "https://example.com/data",
+    "supported_languages": ["en", "bn", "bn-Latn", "hi", "ar"]
   }
   ```
-- **Response 200 OK:**
+- **Status:** `201 Created`
+
+#### `GET /api/v1/datasets`
+List datasets with pagination.
+- **Query Params:** `skip` (int, default 0), `limit` (int, default 50).
+- **Status:** `200 OK`
+
+#### `GET /api/v1/datasets/{dataset_id}`
+Retrieve dataset details by UUID.
+- **Status:** `200 OK` (or `404 Not Found`)
+
+#### `POST /api/v1/datasets/{dataset_id}/documents`
+Add a document passage to the dataset.
+- **Request:**
   ```json
   {
-    "tokens": ["am", "##ar", "son", "##ar", "bang", "##la"],
-    "token_ids": [1042, 2841, 9812, 2841, 14210, 3122],
-    "token_count": 6,
+    "doc_external_id": "doc-001",
+    "content": "Common symptoms of seasonal flu include sudden fever and fatigue.",
+    "language_code": "en",
+    "script_code": "Latn"
+  }
+  ```
+- **Status:** `201 Created`
+
+#### `POST /api/v1/datasets/{dataset_id}/query-groups`
+Add a semantic query intent group (links equivalent queries across languages).
+- **Request:**
+  ```json
+  {
+    "canonical_intent": "Seasonal influenza symptoms",
+    "domain": "healthcare"
+  }
+  ```
+- **Status:** `201 Created`
+
+#### `POST /api/v1/datasets/{dataset_id}/queries`
+Add a language-specific query to a query group.
+- **Request:**
+  ```json
+  {
+    "query_group_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "query_text": "মৌসুমি ফ্লুর লক্ষণ",
+    "language_code": "bn",
+    "script_code": "Beng"
+  }
+  ```
+- **Status:** `201 Created`
+
+---
+
+### 3.3 Tokenizer Inspector (`/api/v1/tokenization`)
+
+#### `POST /api/v1/tokenization/inspect`
+Inspect subword token fragmentation, sequence IDs, and subword fertility.
+- **Request:**
+  ```json
+  {
+    "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+    "text": "মৌসুমি ফ্লুর লক্ষণ",
+    "language_code": "bn",
+    "script_code": "Beng"
+  }
+  ```
+- **Status:** `200 OK`
+- **Response:**
+  ```json
+  {
+    "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+    "language_code": "bn",
+    "script_code": "Beng",
+    "text": "মৌসুমি ফ্লুর লক্ষণ",
+    "tokens": ["<s>", " মৌ", "সুমি", " ফ্লু", "র", " লক্ষণ", "</s>"],
+    "token_ids": [0, 89321, 41203, 78102, 312, 65421, 2],
+    "token_count": 5,
+    "special_token_count": 2,
+    "subword_fertility": 1.67,
     "has_unknown_tokens": false,
-    "subword_fertility_ratio": 2.0
+    "methodological_limitations": "Subword fertility measures lexical vocabulary representation efficiency; it does not constitute a comprehensive measure of semantic understanding or model quality."
   }
   ```
 
 ---
 
-### 2.4 Multilingual Query Lab (`/query-lab`)
+### 3.4 Semantic Vector Search (`/api/v1/search`)
 
-#### `POST /query-lab/compare`
-Executes interactive multi-lingual query search in parallel across indexed documents.
-- **Request Body:**
+#### `POST /api/v1/search`
+Execute vector retrieval for an ad-hoc query against indexed dataset documents.
+- **Request:**
   ```json
   {
-    "dataset_id": "c6a2b8e0-5a3d-4c3e-9b2f-7d1a5c6e8f01",
-    "model_id": "m2-e5-small",
-    "queries": [
-      {"language_code": "en", "query_text": "treatment for seasonal flu"},
-      {"language_code": "bn", "query_text": "মৌসুমি ফ্লুর চিকিৎসা"},
-      {"language_code": "bn-Latn", "query_text": "mousumi flur chikitsa"},
-      {"language_code": "hi", "query_text": "मौसमी फ्लू का इलाज"},
-      {"language_code": "ar", "query_text": "علاج الأنفلونزا الموسمية"}
-    ],
-    "top_k": 5
+    "dataset_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "query_text": "treatment for seasonal flu",
+    "model_id": "minilm",
+    "retrieval_mode": "EXACT",
+    "top_k": 5,
+    "language_filter": "en"
   }
   ```
-- **Response 200 OK:**
+- **Status:** `200 OK`
+- **Response:**
   ```json
   {
-    "model_identifier": "intfloat/multilingual-e5-small",
-    "results_by_language": {
-      "en": {
-        "latency_ms": 14.2,
-        "hits": [
-          {"doc_id": "doc-042", "title": "Influenza Overview", "score": 0.892, "rank": 1}
-        ]
-      },
-      "bn": {
-        "latency_ms": 15.1,
-        "hits": [
-          {"doc_id": "doc-042", "title": "Influenza Overview", "score": 0.835, "rank": 1}
-        ]
-      },
-      "bn-Latn": {
-        "latency_ms": 14.8,
-        "hits": [
-          {"doc_id": "doc-199", "title": "General Wellness", "score": 0.612, "rank": 1}
-        ]
+    "query_text": "treatment for seasonal flu",
+    "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+    "retrieval_mode": "EXACT",
+    "latency_ms": 14.2,
+    "results_count": 1,
+    "results": [
+      {
+        "document_id": "b1b72a44-4821-4d39-9fbf-862adcf32bf1",
+        "doc_external_id": "doc-001",
+        "content": "Common symptoms of seasonal flu include sudden fever and fatigue.",
+        "language_code": "en",
+        "script_code": "Latn",
+        "score": 0.8412,
+        "rank": 1
       }
-    },
-    "jaccard_overlap_matrix": {
-      "en_vs_bn": 0.80,
-      "en_vs_bn-Latn": 0.20,
-      "bn_vs_bn-Latn": 0.25
-    }
-  }
-  ```
-
----
-
-### 2.5 Experiments & Benchmarking (`/experiments`)
-
-#### `POST /experiments`
-Create and schedule a full evaluation experiment.
-- **Request Body:**
-  ```json
-  {
-    "name": "E5-Small vs MiniLM Cross-Lingual Evaluation",
-    "dataset_id": "c6a2b8e0-5a3d-4c3e-9b2f-7d1a5c6e8f01",
-    "model_ids": ["m1-minilm", "m2-e5-small"],
-    "baseline_language": "en",
-    "cutoff_k_values": [1, 5, 10, 20],
-    "similarity_metric": "cosine",
-    "compute_bootstrap_ci": true,
-    "bootstrap_samples": 1000
-  }
-  ```
-- **Response 202 Accepted:**
-  ```json
-  {
-    "experiment_id": "e4f8-412a",
-    "status": "QUEUED",
-    "created_at": "2026-11-09T15:35:00Z",
-    "runs": [
-      {"run_id": "run-001", "model_id": "m1-minilm", "status": "QUEUED"},
-      {"run_id": "run-002", "model_id": "m2-e5-small", "status": "QUEUED"}
     ]
   }
   ```
 
-#### `GET /experiments/{id}/stream`
-Server-Sent Events (SSE) streaming real-time experiment progress:
-- **Event: `progress`**
-  ```json
-  {"run_id": "run-001", "stage": "ENCODING_QUERIES", "progress": 45.0, "current_language": "bn"}
-  ```
-- **Event: `completed`**
-  ```json
-  {"experiment_id": "e4f8-412a", "status": "COMPLETED", "summary_url": "/api/v1/experiments/e4f8-412a/results"}
-  ```
-
-#### `GET /experiments/{id}/results`
-Returns comprehensive evaluation aggregates, disparity gaps, and confidence intervals.
-
 ---
 
-### 2.6 Research Reports (`/reports`)
+### 3.5 Experiments & Evaluation Streaming (`/api/v1/experiments`)
 
-#### `POST /reports/generate`
-Generates a formal research report from an experiment run.
-- **Request Body:**
+#### `POST /api/v1/experiments`
+Create an evaluation study configuration.
+- **Request:**
   ```json
   {
-    "experiment_id": "e4f8-412a",
-    "title": "Empirical Audit of Multilingual Search Disparity in South Asian Scripts",
-    "format": "MARKDOWN"
+    "name": "Cross-Lingual Disparity Study: Healthcare",
+    "description": "Evaluation of MiniLM vs Multilingual-E5 on South Asian queries",
+    "dataset_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "baseline_language_code": "en",
+    "cutoff_k_values": [1, 5, 10, 20],
+    "similarity_metric": "cosine"
   }
   ```
-- **Response 201 Created:** Returns full markdown report with citation bibliography, statistical tables, and methodology disclaimer.
+- **Status:** `201 Created`
+
+#### `GET /api/v1/experiments`
+List all experiments with their runs and statuses.
+- **Status:** `200 OK`
+
+#### `GET /api/v1/experiments/{experiment_id}`
+Retrieve a specific experiment.
+- **Status:** `200 OK`
+
+#### `POST /api/v1/experiments/{experiment_id}/run`
+Trigger an asynchronous evaluation run for a specific model adapter and retrieval mode.
+- **Request:**
+  ```json
+  {
+    "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+    "retrieval_mode": "EXACT",
+    "random_seed": 42
+  }
+  ```
+- **Status:** `202 Accepted`
+- **Response:**
+  ```json
+  {
+    "id": "7fa85f64-5717-4562-b3fc-2c963f66afa7",
+    "experiment_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+    "retrieval_mode": "EXACT",
+    "status": "PENDING",
+    "progress_percent": 0.0,
+    "error_message": null,
+    "device_used": "cpu",
+    "hardware_metadata": null,
+    "total_latency_seconds": null,
+    "created_at": "2026-11-10T02:00:00Z"
+  }
+  ```
+
+#### `GET /api/v1/experiments/{experiment_id}/stream`
+Stream real-time execution progress events using Server-Sent Events (SSE).
+- **Media Type:** `text/event-stream`
+- **Headers:** `Cache-Control: no-cache`, `X-Accel-Buffering: no`
+- **Event Lifecycle:**
+  1. `event: STARTED` — Run initialized.
+  2. `event: DATASET_LOADING` — Documents, query groups, and relevance judgments loaded.
+  3. `event: EMBEDDING_GENERATION` — Documents encoded into dense vectors.
+  4. `event: RETRIEVAL_EXECUTION` — Vector candidate retrieval executed across queries.
+  5. `event: METRIC_CALCULATION` — Precision, Recall, MRR, nDCG, bootstrap CIs, and paired Wilcoxon tests computed.
+  6. `event: COMPLETED` (or `FAILED`) — Run finished and summary available.
+
+#### `GET /api/v1/experiments/{experiment_id}/results`
+Retrieve comprehensive evaluation aggregates, 95% bootstrap confidence intervals, paired Wilcoxon p-values, absolute performance gaps ($\Delta_{abs}$), relative disparity ratios ($D_{rel}$), and transliteration penalties ($\Phi_{trans}$).
+- **Status:** `200 OK`
+- **Response:**
+  ```json
+  {
+    "experiment_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "experiment_name": "Cross-Lingual Disparity Study: Healthcare",
+    "dataset_id": "2fa85f64-5717-4562-b3fc-2c963f66afa5",
+    "baseline_language": "en",
+    "runs": [
+      {
+        "id": "7fa85f64-5717-4562-b3fc-2c963f66afa7",
+        "experiment_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        "retrieval_mode": "EXACT",
+        "status": "COMPLETED",
+        "progress_percent": 100.0,
+        "error_message": null,
+        "device_used": "cpu",
+        "hardware_metadata": {"cpu_threads": 8},
+        "total_latency_seconds": 4.12,
+        "created_at": "2026-11-10T02:00:00Z"
+      }
+    ],
+    "metrics": [
+      {
+        "language_code": "en",
+        "script_code": "Latn",
+        "metric_name": "ndcg@10",
+        "metric_value": 0.9412,
+        "ci_lower_95": 0.9120,
+        "ci_upper_95": 0.9701,
+        "p_value_vs_baseline": null,
+        "is_statistically_significant": false
+      },
+      {
+        "language_code": "bn",
+        "script_code": "Beng",
+        "metric_name": "ndcg@10",
+        "metric_value": 0.7230,
+        "ci_lower_95": 0.6841,
+        "ci_upper_95": 0.7618,
+        "p_value_vs_baseline": 0.0034,
+        "is_statistically_significant": true
+      }
+    ],
+    "fairness_disparities": [
+      {
+        "language_code": "bn",
+        "baseline_language": "en",
+        "absolute_performance_gap": 0.2182,
+        "relative_disparity_ratio": 0.7682,
+        "p_value": 0.0034,
+        "is_statistically_significant": true
+      }
+    ],
+    "transliteration_penalties": {
+      "bn_to_bn-Latn": 0.3120
+    }
+  }
+  ```
