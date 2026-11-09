@@ -1,0 +1,74 @@
+version: "3.8"
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: lingualens-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: lingualens
+      POSTGRES_PASSWORD: lingualens_secret
+      POSTGRES_DB: lingualens_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lingualens -d lingualens_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: lingualens-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: lingualens-backend
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://lingualens:lingualens_secret@db:5432/lingualens_db
+      - REDIS_URL=redis://redis:6379/0
+      - VECTOR_BACKEND=pgvector
+      - TASK_ENGINE=celery
+      - TORCH_DEVICE=cpu
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - model_cache:/app/models_cache
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: lingualens-frontend
+    restart: always
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:
+  model_cache:
