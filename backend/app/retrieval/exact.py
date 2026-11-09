@@ -18,7 +18,14 @@ class NumPyExactVectorRetriever(BaseVectorRetriever):
     """Ground-truth exact nearest-neighbor vector retrieval engine.
 
     Performs exhaustive matrix multiplication across all indexed document vectors.
-    Guarantees 100% recall (theoretical upper bound / baseline) with zero quantization loss.
+    Guarantees 100% nearest-neighbor search fidelity (IndexRecall@K = 1.0 against
+    the embedding space) with zero index approximation or quantization loss.
+
+    Note on Terminology:
+        Exact nearest-neighbor retrieval guarantees finding the geometrically closest
+        vectors in the embedding space. It does NOT guarantee 100% Information Retrieval
+        Recall (IR Recall@K) against human relevance judgments, which depends on whether
+        the embedding model accurately mapped semantically relevant documents near the query.
     """
 
     def __init__(

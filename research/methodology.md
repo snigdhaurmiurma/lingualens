@@ -227,3 +227,103 @@ Empirical micro-benchmarking on an Intel Core i5/i7 equivalent laptop environmen
 
 *Key Insight:* Increasing the inference batch size from 1 to 10 delivers a ~4x throughput increase per query on CPU by exploiting vectorized matrix multiplication (BLAS) across transformer attention heads without increasing memory footprint significantly.
 
+---
+
+## 11. Vector Retrieval Taxonomy & Evaluation Standards
+
+To maintain scientific precision, LinguaLens strictly demarcates vector search accuracy from information retrieval effectiveness:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Retrieval Evaluation Layers                     │
+├────────────────────────────────────┬───────────────────────────────────┤
+│    Vector Space Approximation      │     Information Retrieval Task    │
+│            Fidelity                │            Effectiveness          │
+├────────────────────────────────────┼───────────────────────────────────┤
+│ Metric: IndexRecall@K              │ Metric: IR Recall@K, nDCG@K       │
+│ Baseline: Exact Brute-Force Vector │ Baseline: Human Relevance Truth   │
+│ Measures: Graph approximation loss │ Measures: Semantic understanding  │
+└────────────────────────────────────┴───────────────────────────────────┘
+```
+
+### 11.1 Exact vs. Approximate Nearest-Neighbor Search
+1. **Exact Nearest-Neighbor Search (Exhaustive Brute-Force):**
+   - Computes pairwise cosine distance against every indexed document vector in the corpus ($\mathcal{O}(N)$ computational complexity).
+   - Guarantees **$100\%$ Search Fidelity** ($IndexRecall@K = 1.0$), meaning it retrieves the true top-$K$ geometrically closest vectors in the dense embedding space.
+   - **CRITICAL SCIENTIFIC DISTINCTION:** Exact nearest-neighbor retrieval does **NOT** guarantee $100\%$ Information Retrieval Recall ($\text{IR Recall@K}$). If an embedding model fails to place relevant documents in close proximity to the query vector, exact retrieval will faithfully retrieve irrelevant documents that happen to be close in vector space. Exact retrieval isolates the *embedding model's semantic quality* by eliminating indexing approximation error.
+2. **Approximate Nearest-Neighbor (ANN) Search (e.g., HNSW, IVFFlat):**
+   - Employs heuristic proximity graphs or Voronoi clustering to avoid full-corpus scans.
+   - Accelerates retrieval from linear time to sub-linear empirical latency, but trades search fidelity: graph pruning may fail to visit the true geometric nearest neighbors.
+
+### 11.2 Disambiguation of Evaluation Metrics
+1. **Index Fidelity Metric ($\text{IndexRecall@K}$):**
+   - Evaluates the vector index structure relative to the exact brute-force baseline:
+     $$\text{IndexRecall@K} = \frac{|\mathcal{R}_{\text{approx@K}} \cap \mathcal{R}_{\text{exact@K}}|}{K}$$
+   - Where $\mathcal{R}_{\text{exact@K}}$ is the set of top-$K$ documents returned by exhaustive brute-force search, and $\mathcal{R}_{\text{approx@K}}$ is the set returned by the approximate index.
+2. **Information Retrieval Task Metric ($\text{IR Recall@K}$):**
+   - Evaluates whether the retrieved documents satisfy the human information need:
+     $$\text{IR Recall@K} = \frac{|\{d \in \mathcal{R}_{@K} : r(q, d) \ge \tau\}|}{|\{d \in \mathcal{D} : r(q, d) \ge \tau\}|}$$
+   - Where $r(q, d) \in \{0, 1, 2, 3\}$ is the ground-truth relevance judgment annotated by human experts, and $\tau = 2$ is the relevance threshold.
+
+---
+
+## 12. HNSW Index Architecture & Configuration in PostgreSQL pgvector
+
+Hierarchical Navigable Small World (HNSW) is a multi-layer proximity graph structure where upper layers contain long-range skip edges and lower layers contain densely connected local neighborhoods.
+
+### 12.1 Index Creation & Operator Class
+In PostgreSQL + `pgvector`, HNSW is constructed using the cosine distance operator `<=>`:
+
+```sql
+CREATE INDEX idx_document_embeddings_hnsw
+ON document_embeddings USING hnsw (embedding vector_cosine_ops)
+WITH (m = 16, ef_construction = 64);
+```
+
+- **Distance Operator:** `<=>` computes Cosine Distance:
+  $$\text{dist}_{\cos}(\mathbf{u}, \mathbf{v}) = 1 - \frac{\mathbf{u} \cdot \mathbf{v}}{\|\mathbf{u}\|_2 \|\mathbf{v}\|_2}$$
+  $$\text{sim}_{\cos}(\mathbf{u}, \mathbf{v}) = 1.0 - \text{dist}_{\cos}(\mathbf{u}, \mathbf{v})$$
+- **Operator Class:** `vector_cosine_ops` binds the HNSW graph traversal specifically to cosine distance.
+
+### 12.2 Tuning Parameters
+- **`m` (Default: 16):** Maximum number of bi-directional connections per graph node. Higher `m` improves index recall and graph connectivity on clustered multilingual datasets, at the expense of higher index build time and memory usage.
+- **`ef_construction` (Default: 64):** Size of the dynamic candidate list evaluated during index insertion. A larger `ef_construction` produces a higher quality graph topology.
+- **`ef_search` (Default: 40):** Size of the dynamic candidate list maintained during query execution:
+  ```sql
+  SET hnsw.ef_search = 40;
+  ```
+  Adjustable dynamically at query time: increasing `ef_search` increases `IndexRecall@K` towards $1.0$ at the cost of higher query latency.
+
+### 12.3 Complexity Clarification
+While theoretical small-world graph routing exhibits $\mathcal{O}(\log N)$ hops under uniform metric spaces, real-world high-dimensional vector spaces (such as $d = 384$ or $1024$) suffer from the **curse of dimensionality**, hubness, and representation anisotropy. HNSW must therefore be characterized as an **approximate graph-based retrieval algorithm with empirical sub-linear search characteristics**, rather than a mathematically guaranteed $\mathcal{O}(\log N)$ bound.
+
+---
+
+## 13. Embedding Vector Dimension Strategy
+
+### 13.1 Current Implementation (Fixed 384d Baseline)
+In Milestone 2 and 3, LinguaLens prioritizes lightweight CPU inference using two 384-dimensional models:
+- `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` ($d = 384$)
+- `intfloat/multilingual-e5-small` ($d = 384$)
+
+In the current PostgreSQL schema:
+- The column is defined via `VectorType(dim=384)`, which compiles to `vector(384)` in PostgreSQL.
+- **Dimension Validation:**
+  - Application level: `DocumentEmbedding.dimension` and `BaseVectorRetriever.dimension` reject vectors with mismatched shapes (`len(v) != 384`) with a clear `ValueError`.
+  - Database level: PostgreSQL strictly enforces length constraints; inserting a vector of length $\ne 384$ raises a database exception.
+
+### 13.2 Strategy for Coexisting Multi-Dimensional Models (768d, 1024d)
+When future milestones introduce larger models (e.g. `google/muril-base-cased` at $d=768$ or `BAAI/bge-m3` at $d=1024$), multiple model dimensions must coexist. LinguaLens designs for two architectural evolution paths:
+1. **Unconstrained Vectors (Native pgvector 0.5.0+):**
+   - By declaring `embedding vector` (omitting the dimension parameter), PostgreSQL allows vectors of arbitrary dimensions in the same table.
+   - However, an HNSW index in pgvector requires a fixed dimension per index. Separate partial or expression indexes must be defined per dimension:
+     ```sql
+     CREATE INDEX idx_embeddings_384 ON document_embeddings USING hnsw (embedding vector_cosine_ops) WHERE dimension = 384;
+     CREATE INDEX idx_embeddings_768 ON document_embeddings USING hnsw (embedding vector_cosine_ops) WHERE dimension = 768;
+     CREATE INDEX idx_embeddings_1024 ON document_embeddings USING hnsw (embedding vector_cosine_ops) WHERE dimension = 1024;
+     ```
+2. **Table Partitioning / Dedicated Embedding Tables:**
+   - Partitioning `document_embeddings` by `model_id` or dimension into dedicated physical tables (`document_embeddings_384`, `document_embeddings_768`, etc.).
+   - This provides optimal index density, distinct memory cache pools, and clean migration paths per model family.
+
+

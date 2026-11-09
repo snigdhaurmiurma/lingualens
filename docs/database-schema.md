@@ -220,6 +220,13 @@ CREATE INDEX idx_rel_judgments_doc ON relevance_judgments(document_id);
 CREATE INDEX idx_eval_results_run_lang ON evaluation_results(experiment_run_id, language_code, metric_name);
 CREATE INDEX idx_retrieved_docs_run_query ON retrieved_documents(experiment_run_id, query_id, rank_position);
 
--- 4. Vector Similarity Index (Optional pgvector deployment)
--- CREATE INDEX idx_document_embeddings ON document_embeddings USING hnsw (embedding vector_cosine_ops);
+-- 4. Vector Similarity Index (PostgreSQL pgvector deployment)
+-- HNSW (Hierarchical Navigable Small World) with cosine distance operator class
+CREATE INDEX idx_document_embeddings_hnsw 
+ON document_embeddings USING hnsw (embedding vector_cosine_ops)
+WITH (m = 16, ef_construction = 64);
+
+-- Query-time search parameter tuning:
+-- SET hnsw.ef_search = 40;
+
 ```
