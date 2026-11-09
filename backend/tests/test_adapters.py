@@ -103,3 +103,71 @@ def test_real_cpu_inference_minilm():
     adapter.unload()
     assert adapter.is_loaded is False
 
+
+def test_minilm_matches_official_sentence_transformers():
+    """Verify custom MiniLM adapter reproduces official SentenceTransformer embeddings exactly."""
+    from sentence_transformers import SentenceTransformer
+
+    test_sentences = [
+        "symptoms of seasonal flu",
+        "মৌসুমি ফ্লুর লক্ষণ",
+        "mousumi flur lokkhon",
+        "मौसमी फ्लू के लक्षण",
+        "أعراض الإنفلونزا الموسمية",
+    ]
+
+    # Official SentenceTransformer inference
+    st_model = SentenceTransformer(MiniLMEmbeddingAdapter.MODEL_IDENTIFIER, device="cpu")
+    st_embeddings = st_model.encode(test_sentences, normalize_embeddings=True)
+
+    # Custom Adapter inference
+    adapter = MiniLMEmbeddingAdapter(device="cpu")
+    adapter.load()
+    adapter_embeddings = adapter.encode_queries(test_sentences, normalize=True)
+
+    # Validate shapes and exact numerical equivalence
+    assert st_embeddings.shape == adapter_embeddings.shape
+    max_diff = float(np.max(np.abs(st_embeddings - adapter_embeddings)))
+    assert max_diff < 1e-4, f"Max difference between adapter and official implementation ({max_diff}) exceeded tolerance"
+
+    adapter.unload()
+
+
+def test_real_cpu_inference_e5():
+    """Verify actual real CPU forward pass, asymmetric prefixes, and normalization with E5-Small."""
+    adapter = MultilingualE5Adapter(device="cpu")
+    adapter.load()
+    assert adapter.is_loaded is True
+
+    queries = ["symptoms of seasonal flu", "মৌসুমি ফ্লুর লক্ষণ"]
+    documents = [
+        "Influenza, commonly known as flu, is an infectious disease caused by influenza viruses.",
+        "মৌসুমি ফ্লু একটি সংক্রামক রোগ যা ইনফ্লুয়েঞ্জা ভাইরাসের কারণে ঘটে।",
+        "Paris is the capital and most populous city of France.",
+    ]
+
+    query_embeddings = adapter.encode_queries(queries, batch_size=2, normalize=True)
+    doc_embeddings = adapter.encode_documents(documents, batch_size=3, normalize=True)
+
+    assert isinstance(query_embeddings, np.ndarray)
+    assert query_embeddings.shape == (2, 384)
+    assert query_embeddings.dtype == np.float32
+
+    assert isinstance(doc_embeddings, np.ndarray)
+    assert doc_embeddings.shape == (3, 384)
+    assert doc_embeddings.dtype == np.float32
+
+    # L2 Norm check: unit length
+    for norm_val in np.linalg.norm(query_embeddings, axis=1):
+        assert norm_val == pytest.approx(1.0, rel=1e-3)
+
+    for norm_val in np.linalg.norm(doc_embeddings, axis=1):
+        assert norm_val == pytest.approx(1.0, rel=1e-3)
+
+    # Retrieval sanity check: English medical query should be more similar to medical docs than to Paris doc
+    sim_en_med = float(np.dot(query_embeddings[0], doc_embeddings[0]))
+    sim_en_paris = float(np.dot(query_embeddings[0], doc_embeddings[2]))
+    assert sim_en_med > sim_en_paris, f"Medical query ({sim_en_med}) should score higher than Paris distractor ({sim_en_paris})"
+
+    adapter.unload()
+    assert adapter.is_loaded is False

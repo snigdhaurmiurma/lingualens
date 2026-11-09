@@ -135,12 +135,18 @@ class MultilingualE5Adapter(BaseEmbeddingAdapter):
         token_ids: list[int] = encoded["input_ids"]
         tokens: list[str] = self._tokenizer.convert_ids_to_tokens(token_ids)
 
+        # Identify boundary and special tokens (<s>, </s>, <pad>, etc.)
+        special_tokens_set = set(self._tokenizer.all_special_tokens)
+        text_tokens = [tok for tok in tokens if tok not in special_tokens_set]
+
         words = text.strip().split()
         word_count = len(words)
-        token_count = len(tokens)
+        total_token_count = len(tokens)
+        text_token_count = len(text_tokens)
 
+        # Subword fertility: actual text subwords per word (excluding <s> and </s>)
         fertility_ratio = (
-            token_count / max(1, word_count) if word_count > 0 else 0.0
+            text_token_count / max(1, word_count) if word_count > 0 else 0.0
         )
 
         unk_id = getattr(self._tokenizer, "unk_token_id", None)
@@ -151,7 +157,9 @@ class MultilingualE5Adapter(BaseEmbeddingAdapter):
             language_code=language_code,
             tokens=tokens,
             token_ids=token_ids,
-            token_count=token_count,
+            token_count=total_token_count,
+            text_tokens=text_tokens,
+            text_token_count=text_token_count,
             word_count=word_count,
             subword_fertility_ratio=round(fertility_ratio, 2),
             has_unknown_tokens=(unk_count > 0),

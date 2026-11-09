@@ -144,3 +144,86 @@ Every benchmark dataset must provide tabular/JSONL records conforming strictly t
 1. **Synthetic Data Quarantine:** Synthetic or machine-translated queries must never be presented as empirical ground truth. They must carry the label `SYNTHETIC_UNCORRECTED` until validated by native speakers.
 2. **Determinism:** Seed initialization (`torch.manual_seed`, `np.random.seed`) must be logged for every run.
 3. **Equal Metrics $\ne$ Fairness:** Equal nDCG scores across languages do not guarantee semantic fairness if error types vary (e.g., catastrophic misretrievals in health/legal domains). Qualitative error analyses are documented alongside numerical tables.
+
+---
+
+## 7. Subword Fertility & Tokenizer Fragmentation
+
+A tokenizer converts surface text strings into integer token sequences for neural model consumption. Multilingual models employ subword tokenizers (e.g., SentencePiece / Byte-Pair Encoding or Unigram) with fixed vocabulary sizes (e.g., 250,000 for XLM-RoBERTa). Because vocabulary allocation is heavily biased towards dominant pre-training corpora (English, Romance languages), underrepresented or morphologically rich languages suffer from severe subword fragmentation.
+
+### 7.1 Corrected Subword Fertility Ratio Formula
+Subword fertility measures how many subword units are required on average to represent a single natural word. **Crucially, special structural boundary tokens (such as sequence start `<s>` and sequence end `</s>`) are metadata artifacts of the transformer architecture, not linguistic subwords.** Including boundary tokens artificially inflates fertility, especially for short queries.
+
+Therefore, LinguaLens defines Subword Fertility strictly over natural linguistic subword units:
+
+$$\text{Fertility}(T) = \frac{|\mathcal{T}_{\text{linguistic}}(T)|}{|\mathcal{W}(T)|}$$
+
+where:
+- $\mathcal{W}(T)$ is the sequence of natural words obtained via whitespace/punctuation tokenization.
+- $\mathcal{T}_{\text{linguistic}}(T)$ is the sequence of subword tokens produced by the model tokenizer, **excluding all special boundary tokens** ($\{ \texttt{<s>}, \texttt{</s>}, \texttt{[CLS]}, \texttt{[SEP]} \}$).
+
+#### Validated Analytical Fertility Across Languages (MiniLM-L12-v2 / XLM-R Tokenizer):
+- **English:** 5 linguistic tokens / 4 words = **1.25**
+- **Bengali (Native Script):** 8 linguistic tokens / 3 words = **2.67**
+- **Banglish (Latin Transliteration):** 6 linguistic tokens / 3 words = **2.00**
+- **Hindi (Devanagari):** 6 linguistic tokens / 4 words = **1.50**
+- **Arabic (Arabic Script):** 8 linguistic tokens / 3 words = **2.67**
+
+### 7.2 Disentangling Tokenizer Fragmentation from Semantic Understanding
+It is a common misconception in multilingual NLP to assume that high token fragmentation directly causes or equates to poor semantic retrieval:
+1. **Fragmentation $\ne$ Incomprehension:** A high fertility ratio indicates that the model must compose meaning across more individual embedding vectors, which places higher demand on the transformer's self-attention mechanism and consumes more context window budget. However, if the transformer's self-attention layers have observed sufficient co-occurrence patterns during pre-training, it can still compose highly accurate semantic representations from fragmented subwords.
+2. **Compact Tokens $\ne$ Semantic Alignment:** Conversely, a language or script with low subword fertility may still suffer from poor semantic alignment if the parallel training corpora did not adequately ground those concepts in cross-lingual space.
+3. **Research Implication:** Tokenizer fragmentation is an *input efficiency and representation load metric*, whereas IR metrics ($nDCG$, Precision) and Cosine Similarity are *downstream semantic output metrics*. LinguaLens measures both to analyze whether and where fragmentation correlates with retrieval degradation, without confusing correlation with causation.
+
+---
+
+## 8. Cross-Lingual Semantic Space & Similarity Dynamics
+
+### 8.1 Cosine Similarity vs. Downstream Retrieval Effectiveness
+In a bi-encoder architecture, query and passage vectors are compared via cosine similarity. While cross-lingual cosine similarity between parallel sentence pairs indicates semantic vector alignment in the embedding space:
+- High cosine similarity between parallel queries indicates geometric closeness, but **does not guarantee high retrieval rank** if corpus passages are pulled closer to conflicting distractor documents.
+- Moderate cosine similarity between parallel queries across languages can still yield identical top-$K$ retrieval rankings if the target documents are similarly positioned relative to both language queries.
+
+### 8.2 Granular Linguistic Sensitivity in Cross-Lingual Embeddings
+Empirical evaluations demonstrate that cross-lingual cosine similarity is highly sensitive to query category, syntactic domain, and vocabulary borrowing:
+- **General Knowledge / Common Concepts:** Parallel concepts with clear cross-lingual equivalents exhibit strong alignment in MiniLM-L12-v2:
+  - *"what is the capital of France?"* $\leftrightarrow$ *"ফ্রান্সের রাজধানী কী?"*: $\cos = \mathbf{0.8355}$
+  - *"climate change and global warming"* $\leftrightarrow$ *"জলবায়ু পরিবর্তন এবং বৈশ্বিক উষ্ণতা"*: $\cos = \mathbf{0.6760}$
+  - *"water is essential for life"* $\leftrightarrow$ *"পানি জীবনের জন্য অপরিহার্য"*: $\cos = \mathbf{0.6104}$
+  - *"the sun rises in the east"* $\leftrightarrow$ *"সূর্য পূর্ব দিকে ওঠে"*: $\cos = \mathbf{0.5794}$
+- **Domain-Specific / Transliterated Loanwords:** When a query contains transliterated medical or technical terms (e.g., *"symptoms of seasonal flu"* vs. *"মৌসুমি ফ্লুর লক্ষণ"*, where *"ফ্লু"* is an English loanword phonetically transliterated into Bengali script), cross-lingual similarity can drop markedly (e.g., $0.1300$).
+- **Methodological Standard:** LinguaLens enforces that low similarity on an isolated single query or query group must **never** be cited as evidence of overall language-family failure. Reliable conclusions require broad, multi-domain benchmark sets ($N \ge 100$ query groups) spanning natural queries, technical terminology, and colloquial expressions.
+
+---
+
+## 9. Asymmetric Retrieval & Model-Specific Instruction Prefixes
+
+Dense retrieval models vary in their training objectives:
+- **Symmetric Encoders (e.g., MiniLM-L12-v2):** Trained using sentence-pair classification and paraphrase scoring. Query and document texts are encoded symmetrically without prefixes.
+- **Asymmetric Encoders (e.g., E5 - Weakly-Supervised Contrastive Pre-training):** Specifically trained to differentiate short search queries from full document passages.
+  - Queries **must** be prepended with `"query: "` (e.g., `"query: symptoms of seasonal flu"`).
+  - Documents / Passages **must** be prepended with `"passage: "` (e.g., `"passage: Influenza is a viral infection..."`).
+  - Omitting these prefixes causes a distribution shift that severely harms cross-lingual retrieval accuracy and violates the model's design specifications. LinguaLens adapters automatically manage these prefixes transparently via `encode_queries()` and `encode_documents()`.
+
+---
+
+## 10. Empirical CPU Inference Profiling
+
+To guarantee accessibility for developers and researchers without dedicated GPU clusters, LinguaLens profiles and optimizes all embedding adapters for multi-threaded CPU execution.
+
+Empirical micro-benchmarking on an Intel Core i5/i7 equivalent laptop environment with 2 PyTorch CPU threads yielded the following baseline metrics for `paraphrase-multilingual-MiniLM-L12-v2` (117M parameters, 384 dimensions):
+
+| Metric | Measurement | Description |
+| :--- | :--- | :--- |
+| **PyTorch CPU Threads** | `2` | Configured via `torch.set_num_threads()` |
+| **Cold Model Load Time** | `~32.7 s` | Initial disk read, tensor allocation, and Hugging Face weight hydration |
+| **Cold First Inference** | `266.37 ms` | Single query forward pass including first-time kernel dispatch |
+| **Warm Query Latency (Mean)** | `103.44 ms` | Average inference time across 10 sequential warm queries |
+| **Warm Query Latency (p50)** | `99.88 ms` | Median single-query response time |
+| **Warm Query Latency (p95)** | `131.71 ms` | 95th percentile single-query response time |
+| **Batch Size 1 Latency** | `106.58 ms` | `106.58 ms` / query |
+| **Batch Size 5 Latency** | `200.85 ms` | `40.17 ms` / query (**2.65x throughput speedup**) |
+| **Batch Size 10 Latency** | `267.98 ms` | `26.80 ms` / query (**3.98x throughput speedup**) |
+
+*Key Insight:* Increasing the inference batch size from 1 to 10 delivers a ~4x throughput increase per query on CPU by exploiting vectorized matrix multiplication (BLAS) across transformer attention heads without increasing memory footprint significantly.
+

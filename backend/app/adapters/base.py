@@ -38,6 +38,8 @@ class TokenizationResult:
     tokens: list[str]
     token_ids: list[int]
     token_count: int
+    text_tokens: list[str]
+    text_token_count: int
     word_count: int
     subword_fertility_ratio: float
     has_unknown_tokens: bool

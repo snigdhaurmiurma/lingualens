@@ -55,14 +55,21 @@ The table below summarizes open-source embedding models verified for cross-lingu
 ## 3. Tokenizer Asymmetry & Transliteration Analysis
 
 ### 3.1 Subword Fertility Ratio
-The subword fertility ratio $F(T, L)$ is defined as:
+Subword fertility measures average subword token fragmentation per word. **Crucially, special structural boundary tokens (such as `<s>` and `</s>`) are sequence boundary markers, not linguistic subwords, and are excluded from fertility calculations to prevent artificial inflation on short queries:**
 
-$$F(T, L) = \frac{\text{Total Subword Tokens Produced by Tokenizer } T}{\text{Total Whitespace-Delimited Words in Text of Language } L}$$
+$$F(T, L) = \frac{|\mathcal{T}_{\text{linguistic}}(T)|}{|\mathcal{W}(T)|}$$
 
-In typical SentencePiece/Byte-Pair Encoding models (like XLM-RoBERTa):
-- English (`en`): $F \approx 1.1 - 1.3$
-- Bengali (`bn`, native script): $F \approx 1.6 - 2.2$
-- Banglish (`bn-Latn`, transliteration): $F \approx 3.2 - 5.1$
+where $\mathcal{T}_{\text{linguistic}}(T)$ excludes all sequence-level special tokens ($\{ \texttt{<s>}, \texttt{</s>}, \texttt{[CLS]}, \texttt{[SEP]} \}$) and $\mathcal{W}(T)$ is the natural word count.
 
-### 3.2 Consequences of High Fertility
-When a single Banglish word (e.g., `porashona` - "studies") is fragmented into 4 subwords (`["por", "##ash", "##on", "##a"]`), the attention mechanism dissipates over fragmented n-grams, leading to severe vector drift and retrieval collapse. LinguaLens explicitly tracks and plots fertility ratios alongside $nDCG$ to diagnose this root cause.
+#### Empirically Verified Baseline Values (MiniLM-L12-v2 / XLM-R Tokenizer):
+- **English (`en`):** 5 linguistic tokens / 4 words = **1.25**
+- **Bengali (`bn`, native script):** 8 linguistic tokens / 3 words = **2.67**
+- **Banglish (`bn-Latn`, transliteration):** 6 linguistic tokens / 3 words = **2.00**
+- **Hindi (`hi`, Devanagari):** 6 linguistic tokens / 4 words = **1.50**
+- **Arabic (`ar`, Arabic script):** 8 linguistic tokens / 3 words = **2.67**
+
+### 3.2 Scientific Nuance: Fragmentation vs. Semantic Understanding
+- **Input Efficiency vs. Downstream Representation:** High subword fertility means more tokens must be processed by self-attention, consuming more of the context window. However, high fertility alone does **not** prove semantic inability. If pre-training corpora contain sufficient co-occurrence data, the transformer's multi-head attention can compose rich semantics from subwords.
+- **Transliteration Sensitivity:** Banglish (`bn-Latn`) often exhibits non-standardized phonetic spellings across speakers (e.g., `porashona` vs `porasona` vs `porasuna`), which compounds subword fragmentation with vocabulary mismatch.
+- **Comprehensive Evaluation Requirement:** LinguaLens tracks fertility alongside $nDCG$ and cross-lingual cosine similarity across multi-query benchmark suites ($N \ge 100$) to evaluate where fragmentation correlates with true retrieval loss, rather than inferring causation from isolated examples.
+

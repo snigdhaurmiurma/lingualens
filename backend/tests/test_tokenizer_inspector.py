@@ -51,15 +51,39 @@ def test_multilingual_query_group_inspection(minilm_inspector):
 
     assert set(results.keys()) == {"en", "bn", "bn-Latn", "hi", "ar"}
 
-    # Verify Bengali fragmentation
-    assert results["bn"].word_count == 3
-    assert results["bn"].token_count > results["bn"].word_count
-    assert results["bn"].subword_fertility_ratio > 2.0
+    # Verify special tokens exclusion from text_tokens
+    for res in results.values():
+        assert "<s>" in res.tokens
+        assert "</s>" in res.tokens
+        assert "<s>" not in res.text_tokens
+        assert "</s>" not in res.text_tokens
+        assert res.text_token_count == res.token_count - 2
 
-    # Verify Arabic fragmentation
+    # Exact regression checks for corrected subword fertility (text subwords / word count)
+    # en: 5 text subwords / 4 words = 1.25
+    assert results["en"].text_token_count == 5
+    assert results["en"].word_count == 4
+    assert results["en"].subword_fertility_ratio == pytest.approx(1.25, abs=0.01)
+
+    # bn: 8 text subwords / 3 words = 2.6667 ~ 2.67
+    assert results["bn"].text_token_count == 8
+    assert results["bn"].word_count == 3
+    assert results["bn"].subword_fertility_ratio == pytest.approx(2.67, abs=0.01)
+
+    # bn-Latn: 6 text subwords / 3 words = 2.00
+    assert results["bn-Latn"].text_token_count == 6
+    assert results["bn-Latn"].word_count == 3
+    assert results["bn-Latn"].subword_fertility_ratio == pytest.approx(2.00, abs=0.01)
+
+    # hi: 6 text subwords / 4 words = 1.50
+    assert results["hi"].text_token_count == 6
+    assert results["hi"].word_count == 4
+    assert results["hi"].subword_fertility_ratio == pytest.approx(1.50, abs=0.01)
+
+    # ar: 8 text subwords / 3 words = 2.6667 ~ 2.67
+    assert results["ar"].text_token_count == 8
     assert results["ar"].word_count == 3
-    assert results["ar"].token_count > results["ar"].word_count
-    assert results["ar"].subword_fertility_ratio > 2.0
+    assert results["ar"].subword_fertility_ratio == pytest.approx(2.67, abs=0.01)
 
 
 def test_compare_fertility_relative_to_baseline(minilm_inspector):
