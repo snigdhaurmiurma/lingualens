@@ -117,16 +117,40 @@ def paired_wilcoxon_test(
     baseline_scores: Sequence[float] | np.ndarray,
     target_scores: Sequence[float] | np.ndarray,
     significance_alpha: float = 0.05,
+    zero_method: str = "wilcox",
 ) -> tuple[float, float, bool]:
     """Perform a Paired Wilcoxon Signed-Rank Test across paired query metrics.
 
-    Tests the null hypothesis H0 that the distribution of metric differences
-    between baseline and target languages is symmetric about zero (no disparity).
+    Statistical Hypotheses:
+        - Null Hypothesis (H0): The distribution of paired differences
+          D_i = M(q_{i, baseline}) - M(q_{i, target}) is symmetric about zero (no disparity).
+        - Alternative Hypothesis (H1): The distribution of differences is shifted away
+          from zero (two-sided).
+
+    Core Statistical Assumptions:
+        1. Paired Observations: Queries must be strictly paired (belonging to the
+           identical semantic query group Q_G representing equivalent intent).
+        2. Independent Pairs: Each query group pair (x_i, y_i) is sampled independently
+           from other query groups.
+        3. Measurement Scale: Differences D_i are ordinal or continuous (e.g. nDCG deltas).
+        4. Symmetry under H0: The distribution of differences is assumed symmetric under H0.
+           Critically, normality is NOT assumed, making this test appropriate for bounded
+           IR metrics.
+
+    Interpretation of p-value:
+        The p-value is the probability of observing a test statistic at least as
+        extreme as the one calculated, assuming H0 is true.
+        - If p < alpha (default: 0.05), we reject H0 at significance level alpha,
+          concluding that the observed cross-lingual gap is unlikely to be an artifact
+          of sampling noise under the null model.
+        - Caution: A p-value is NOT the probability that the alternative hypothesis is true.
 
     Args:
-        baseline_scores: Metric values for baseline language.
-        target_scores: Paired metric values for target language.
-        significance_alpha: p-value significance threshold (default: 0.05).
+        baseline_scores: Metric values for baseline language (length N).
+        target_scores: Paired metric values for target language (length N).
+        significance_alpha: Significance threshold alpha (default: 0.05).
+        zero_method: How differences equal to zero are treated ('wilcox', 'pratt', 'zsplit').
+                     'wilcox' (default) discards zero differences per standard methodology.
 
     Returns:
         Tuple of (test_statistic, p_value, is_statistically_significant).
@@ -135,23 +159,27 @@ def paired_wilcoxon_test(
     target = np.asarray(target_scores, dtype=np.float64)
 
     if len(base) != len(target):
-        raise ValueError("Paired query length mismatch for Wilcoxon test.")
+        raise ValueError(
+            f"Paired Wilcoxon test requires equal sample lengths: "
+            f"{len(base)} baseline vs {len(target)} target"
+        )
     if len(base) == 0:
         return 0.0, 1.0, False
 
     diffs = base - target
 
-    # Edge case: If all paired differences are identical or zero, test is non-significant
-    if np.all(diffs == 0.0):
+    # If all differences are zero, H0 cannot be rejected
+    non_zero_diffs = diffs[diffs != 0.0]
+    if len(non_zero_diffs) == 0:
         return 0.0, 1.0, False
 
     try:
         # Two-sided Wilcoxon signed-rank test
-        result = stats.wilcoxon(base, target, alternative="two-sided")
+        result = stats.wilcoxon(base, target, alternative="two-sided", zero_method=zero_method)
         stat = float(result.statistic)
         p_val = float(result.pvalue)
         is_sig = p_val < significance_alpha
         return stat, p_val, is_sig
     except ValueError:
-        # Handled in case of insufficient non-zero differences
+        # Occurs if sample size after zero removal is too small for the selected method
         return 0.0, 1.0, False

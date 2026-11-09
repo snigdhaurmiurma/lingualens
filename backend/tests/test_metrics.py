@@ -105,6 +105,8 @@ def test_dcg_and_idcg_analytical_calculation():
     expected_ndcg = expected_dcg_3 / expected_idcg_3
     calculated_ndcg = ndcg_at_k(retrieved, ratings, k=3)
     assert calculated_ndcg == pytest.approx(expected_ndcg, rel=1e-6)
+    # Explicit numerical regression check: DCG@3 ~ 9.130930, IDCG@3 ~ 9.392789 -> nDCG@3 ~ 0.972121
+    assert calculated_ndcg == pytest.approx(0.972121, abs=1e-4)
 
 
 def test_ndcg_perfect_ranking():
@@ -115,6 +117,31 @@ def test_ndcg_perfect_ranking():
     assert ndcg_at_k(retrieved, ratings, k=1) == 1.0
     assert ndcg_at_k(retrieved, ratings, k=2) == 1.0
     assert ndcg_at_k(retrieved, ratings, k=3) == 1.0
+
+
+def test_relevance_threshold_variations():
+    """Verify that Precision@K, Recall@K, and MRR consistently respect custom thresholds."""
+    retrieved = ["doc_A", "doc_B", "doc_C"]
+    ratings = {
+        "doc_A": 1,  # Marginally relevant
+        "doc_B": 2,  # Relevant
+        "doc_C": 3,  # Highly relevant
+    }
+
+    # At threshold = 1: doc_A, doc_B, doc_C are all relevant (total 3)
+    assert precision_at_k(retrieved, ratings, k=3, threshold=1) == 1.0
+    assert recall_at_k(retrieved, ratings, k=3, threshold=1) == 1.0
+    assert mean_reciprocal_rank(retrieved, ratings, threshold=1) == 1.0  # first at rank 1
+
+    # At threshold = 2: doc_B, doc_C are relevant (total 2); doc_A is not relevant
+    assert precision_at_k(retrieved, ratings, k=3, threshold=2) == pytest.approx(2 / 3)
+    assert recall_at_k(retrieved, ratings, k=3, threshold=2) == 1.0
+    assert mean_reciprocal_rank(retrieved, ratings, threshold=2) == 0.5  # first at rank 2 (doc_B)
+
+    # At threshold = 3: only doc_C is relevant (total 1); doc_A, doc_B are not relevant
+    assert precision_at_k(retrieved, ratings, k=3, threshold=3) == pytest.approx(1 / 3)
+    assert recall_at_k(retrieved, ratings, k=3, threshold=3) == 1.0
+    assert mean_reciprocal_rank(retrieved, ratings, threshold=3) == pytest.approx(1 / 3)  # first at rank 3 (doc_C)
 
 
 def test_metrics_edge_cases():

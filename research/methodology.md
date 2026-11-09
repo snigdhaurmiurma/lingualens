@@ -95,8 +95,26 @@ Because retrieval metric distributions are bounded in $[0, 1]$ and often highly 
 3. Compute the empirical 95% confidence interval:
    $$CI_{0.95} = [M^*_{(\lfloor 0.025 \cdot B \rfloor)}, M^*_{(\lceil 0.975 \cdot B \rceil)}]$$
 
-### 4.2 Non-Parametric Significance Testing
-To verify whether disparity is genuine or an artifact of sample variance, LinguaLens runs the **Paired Wilcoxon Signed-Rank Test** across paired metric differences $D_g = M(q_{g, L_{\text{base}}}) - M(q_{g, L})$. Differences are reported as statistically significant only when $p < 0.05$.
+### 4.2 Non-Parametric Significance Testing (Paired Wilcoxon Signed-Rank Test)
+To verify whether observed inter-language performance disparity is statistically genuine or merely an artifact of random query sampling variance, LinguaLens applies the **Paired Wilcoxon Signed-Rank Test** across paired metric differences:
+
+$$D_g = M(q_{g, L_{\text{base}}}) - M(q_{g, L}), \quad \forall g \in \mathcal{G}$$
+
+#### Hypotheses:
+- **Null Hypothesis ($H_0$):** The distribution of paired query metric differences $D_g$ is symmetric about zero (i.e., median difference is zero; there is no language-level advantage).
+- **Alternative Hypothesis ($H_1$):** The distribution of differences is shifted away from zero (two-sided test).
+
+#### Core Methodological Assumptions:
+1. **Genuinely Paired Observations:** The samples are strictly paired: each pair $(M(q_{g, L_{\text{base}}}), M(q_{g, L}))$ originates from the identical semantic query group $g$, holding the information need and corpus ground truth invariant.
+2. **Independent Query Groups:** Each semantic query group $g_i$ is sampled independently from other query groups $g_j$ ($i \ne j$).
+3. **Continuous/Ordinal Scale:** Differences $D_g \in [-1.0, 1.0]$ have an ordered numerical scale.
+4. **Symmetry Under $H_0$:** The distribution of differences under the null hypothesis is assumed symmetric. **Crucially, normality is not assumed**, making this test robust for bounded, non-Gaussian IR metrics like $nDCG$ and $MRR$.
+
+#### Scientific Interpretation of the $p$-Value:
+The $p$-value represents the conditional probability:
+$$p = P\left( |W| \ge |W_{\text{obs}}| \;\middle|\; H_0 \text{ is true} \right)$$
+- If $p < \alpha$ (where $\alpha = 0.05$ is the pre-specified significance threshold), we **reject the null hypothesis $H_0$** at significance level $\alpha$. This indicates that under the assumption of equal language retrieval performance, an inter-language gap this large would occur by chance less than 5% of the time.
+- **Critical Distinction:** A $p$-value is *not* the probability that the alternative hypothesis is true, nor does it measure the magnitude of the disparity (the magnitude is quantified by $\Delta_{abs}$ and its 95% bootstrap confidence interval). LinguaLens always presents the effect size ($\Delta_{abs}$), its empirical 95% CI, and the $p$-value jointly.
 
 ---
 
