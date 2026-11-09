@@ -75,3 +75,31 @@ def test_unload_lifecycle():
     assert adapter.is_loaded is False
     assert adapter._model is None
     assert adapter._tokenizer is None
+
+
+def test_real_cpu_inference_minilm():
+    """Verify actual real CPU forward pass and L2 normalization with MiniLM."""
+    adapter = MiniLMEmbeddingAdapter(device="cpu")
+    adapter.load()
+    assert adapter.is_loaded is True
+
+    queries = ["symptoms of seasonal flu", "মৌসুমি ফ্লুর লক্ষণ"]
+    embeddings = adapter.encode_queries(queries, batch_size=2, normalize=True)
+
+    assert isinstance(embeddings, np.ndarray)
+    assert embeddings.shape == (2, 384)
+    assert embeddings.dtype == np.float32
+
+    # L2 Norm check: unit length
+    norms = np.linalg.norm(embeddings, axis=1)
+    for norm_val in norms:
+        assert norm_val == pytest.approx(1.0, rel=1e-3)
+
+    # Identical text similarity check
+    dup_embeddings = adapter.encode_queries(["test query", "test query"], normalize=True)
+    sim = float(np.dot(dup_embeddings[0], dup_embeddings[1]))
+    assert sim == pytest.approx(1.0, rel=1e-4)
+
+    adapter.unload()
+    assert adapter.is_loaded is False
+

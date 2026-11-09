@@ -2,6 +2,7 @@
 
 A lightweight, 117M-parameter multilingual bi-encoder distilled from XLM-RoBERTa.
 Accepts raw text with zero required task prefixes.
+Uses native Hugging Face AutoModel + AutoTokenizer with Mean Pooling for maximum stability.
 """
 
 from __future__ import annotations
@@ -9,6 +10,8 @@ from __future__ import annotations
 import gc
 from typing import Any, Sequence
 import numpy as np
+import torch
+from transformers import AutoModel, AutoTokenizer
 
 from app.adapters.base import BaseEmbeddingAdapter, ModelMetadata, TokenizationResult
 
@@ -39,16 +42,15 @@ class MiniLMEmbeddingAdapter(BaseEmbeddingAdapter):
         )
 
     def load(self) -> None:
-        """Load model weights and tokenizer."""
+        """Load model weights and tokenizer into memory."""
         if self._is_loaded:
             return
 
         try:
-            from sentence_transformers import SentenceTransformer
-            from transformers import AutoTokenizer
-
-            self._model = SentenceTransformer(self.MODEL_IDENTIFIER, device=self.device)
             self._tokenizer = AutoTokenizer.from_pretrained(self.MODEL_IDENTIFIER)
+            self._model = AutoModel.from_pretrained(self.MODEL_IDENTIFIER)
+            self._model.to(self.device)
+            self._model.eval()
             self._is_loaded = True
         except Exception as exc:
             self._is_loaded = False
@@ -63,27 +65,49 @@ class MiniLMEmbeddingAdapter(BaseEmbeddingAdapter):
         self._is_loaded = False
         gc.collect()
 
+    def _mean_pooling(self, model_output: Any, attention_mask: torch.Tensor) -> torch.Tensor:
+        """Perform standard mean pooling over token embeddings with attention masking."""
+        token_embeddings = model_output[0]
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+        sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, dim=1)
+        sum_mask = torch.clamp(input_mask_expanded.sum(dim=1), min=1e-9)
+        return sum_embeddings / sum_mask
+
+    def _encode_batch(self, texts: Sequence[str], batch_size: int = 32, normalize: bool = True) -> np.ndarray:
+        if not self._is_loaded:
+            self.load()
+
+        if not texts:
+            return np.empty((0, 384), dtype=np.float32)
+
+        all_embeddings: list[np.ndarray] = []
+
+        for i in range(0, len(texts), batch_size):
+            batch = list(texts[i : i + batch_size])
+            encoded = self._tokenizer(
+                batch,
+                padding=True,
+                truncation=True,
+                max_length=128,
+                return_tensors="pt",
+            ).to(self.device)
+
+            with torch.no_grad():
+                outputs = self._model(**encoded)
+                pooled = self._mean_pooling(outputs, encoded["attention_mask"])
+                if normalize:
+                    pooled = torch.nn.functional.normalize(pooled, p=2, dim=1)
+                all_embeddings.append(pooled.cpu().numpy().astype(np.float32))
+
+        return np.vstack(all_embeddings)
+
     def encode_queries(
         self,
         queries: Sequence[str],
         batch_size: int = 32,
         normalize: bool = True,
     ) -> np.ndarray:
-        if not self._is_loaded:
-            self.load()
-
-        if not queries:
-            return np.empty((0, 384), dtype=np.float32)
-
-        # MiniLM does not require any prefix
-        embeddings = self._model.encode(
-            list(queries),
-            batch_size=batch_size,
-            show_progress_bar=False,
-            normalize_embeddings=normalize,
-            convert_to_numpy=True,
-        )
-        return np.asarray(embeddings, dtype=np.float32)
+        return self._encode_batch(queries, batch_size=batch_size, normalize=normalize)
 
     def encode_documents(
         self,
@@ -91,24 +115,11 @@ class MiniLMEmbeddingAdapter(BaseEmbeddingAdapter):
         batch_size: int = 32,
         normalize: bool = True,
     ) -> np.ndarray:
-        if not self._is_loaded:
-            self.load()
-
-        if not documents:
-            return np.empty((0, 384), dtype=np.float32)
-
-        embeddings = self._model.encode(
-            list(documents),
-            batch_size=batch_size,
-            show_progress_bar=False,
-            normalize_embeddings=normalize,
-            convert_to_numpy=True,
-        )
-        return np.asarray(embeddings, dtype=np.float32)
+        return self._encode_batch(documents, batch_size=batch_size, normalize=normalize)
 
     def tokenize(self, text: str, language_code: str = "unknown") -> TokenizationResult:
-        if not self._is_loaded:
-            self.load()
+        if self._tokenizer is None:
+            self._tokenizer = AutoTokenizer.from_pretrained(self.MODEL_IDENTIFIER)
 
         encoded = self._tokenizer(text, add_special_tokens=True)
         token_ids: list[int] = encoded["input_ids"]
