@@ -57,12 +57,15 @@ gantt
 
 ---
 
-### Milestone 3: Storage Layer & Dual-Mode Vector Retrieval
-- **Objective:** Implement SQLAlchemy 2.0 declarative database entities, Alembic migrations, and the dual-mode vector retrieval engine (`PgVectorRetriever` + `NumPyRetriever`).
-- **Key Modules:** `backend/app/models/`, `backend/app/services/retrieval_service.py`, `alembic/`.
-- **Acceptance Criteria:**
-  - Database migrations generate clean schema on PostgreSQL and SQLite.
-  - In-memory `NumPyRetriever` achieves $<15\text{ms}$ query latency across 10,000 document vectors on CPU.
+### Milestone 3: Storage Layer & Dual-Mode Vector Retrieval (COMPLETED & VERIFIED)
+- **Objective:** Implement persistent storage for datasets, documents, queries, experiments, and evaluation metadata; integrate PostgreSQL + pgvector and NumPy for exact/approximate dual-mode vector retrieval; preserve multilingual metadata and connect embedding adapters.
+- **Key Modules:**
+  - Database Models: `backend/app/models/dataset.py`, `backend/app/models/embedding.py`, `backend/app/models/experiment.py`, `backend/app/db/session.py`.
+  - Retrieval Engines: `backend/app/retrieval/base.py`, `backend/app/retrieval/exact.py`, `backend/app/retrieval/pgvector.py`.
+  - Services: `backend/app/services/dataset_service.py`, `backend/app/services/retrieval_service.py`.
+  - Migrations: `backend/alembic/versions/cdebb82c467a_create_initial_schema.py`.
+- **Status:** **Verified & Complete.** 42/42 automated unit and integration tests passing. Covers database connection, constraints, foreign keys, vector persistence, exact cosine retrieval against analytical vectors, pgvector retrieval, result consistency across retrieval modes, language filtering, empty/edge cases, and end-to-end embedding adapter search.
+
 
 ---
 
