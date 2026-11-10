@@ -1,0 +1,96 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 262 83% 58%;
+    --primary-foreground: 210 40% 98%;
+    --primary-hover: 262 83% 50%;
+    --secondary: 215 16% 90%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 215 16% 94%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 262 83% 95%;
+    --accent-foreground: 262 83% 40%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 262 83% 58%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    /* Midnight navy / deep slate research environment */
+    --background: 222 47% 7%;        /* #0B0F19 */
+    --foreground: 210 40% 98%;
+    --card: 222 47% 10%;            /* #111827 */
+    --card-foreground: 210 40% 98%;
+    --popover: 222 47% 10%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 263 70% 50%;         /* #7C3AED violet */
+    --primary-foreground: 210 40% 98%;
+    --primary-hover: 263 70% 58%;
+    --secondary: 217 33% 17%;       /* #1F2937 */
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 263 70% 20%;
+    --accent-foreground: 263 70% 80%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217 33% 20%;          /* #1F2937 */
+    --input: 217 33% 20%;
+    --ring: 263 70% 50%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased min-h-screen selection:bg-primary/20 selection:text-primary;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* Multilingual Typography and Direction Classes */
+.font-bengali {
+  font-family: "Noto Sans Bengali", var(--font-sans, sans-serif);
+  line-height: 1.6;
+}
+
+.font-devanagari {
+  font-family: "Noto Sans Devanagari", var(--font-sans, sans-serif);
+  line-height: 1.6;
+}
+
+.font-arabic {
+  font-family: "Noto Sans Arabic", "Scheherazade New", var(--font-sans, sans-serif);
+  direction: rtl;
+  text-align: right;
+  line-height: 1.7;
+}
+
+/* Scrollbar customization */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.45);
+}
