@@ -14,7 +14,7 @@
 ### **Scene-by-Scene Storyboard**
 
 #### **Scene 1: The Hook & Research Motivation (0:00 – 0:18)**
-* **Visual:** Smooth pan over the LinguaLens Overview Dashboard (`http://localhost:3000`). Highlight the live **`Gateway Connected`** indicator, the **Model Adapter Registry** (MiniLM vs Multilingual-E5), and the active **5-Language Matrix**.
+* **Visual:** Smooth pan over the LinguaLens Overview Dashboard (`https://lingualens-fhpq.vercel.app`). Highlight the live **`Gateway Connected`** indicator, the **Model Adapter Registry** (MiniLM vs Multilingual-E5), and the active **5-Language Matrix**.
 * **Voiceover / Caption:**
   > *"When we evaluate multilingual semantic search, we often assume high-resource language benchmarks translate equally to global languages. But what actually happens when users search in Bengali, Hindi, Arabic, or phonetic transliterations like Banglish? Meet LinguaLens — an open-source evaluation platform designed to quantify cross-lingual retrieval disparity and subword tokenization bias."*
 
@@ -41,6 +41,6 @@
   > *"Every evaluation is statistically rigorous. LinguaLens computes non-parametric bootstrap confidence intervals and paired significance tests, proving whether retrieval performance differences between languages represent true systemic bias or random sampling variance."*
 
 #### **Scene 5: Architecture & Open Source Call-to-Action (1:20 – 1:30)**
-* **Visual:** Show clean terminal running Next.js 14 and FastAPI + GitHub repository link.
+* **Visual:** Show clean terminal running Next.js 14 and FastAPI + GitHub repository link (`https://github.com/snigdhaurmiurma/lingualens`) and live Vercel link (`https://lingualens-fhpq.vercel.app`).
 * **Voiceover / Caption:**
-  > *"Built with Next.js 14, FastAPI, PyTorch, and SQLAlchemy. Full architecture documentation, reproducible test suites, and source code are available on GitHub. Check out the link below!"*
+  > *"Built with Next.js 14, FastAPI, PyTorch, and SQLAlchemy. Full architecture documentation, reproducible test suites, and source code are available on GitHub, and the live platform is deployed on Vercel. Check out the link below!"*

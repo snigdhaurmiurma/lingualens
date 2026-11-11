@@ -7,6 +7,7 @@
 
 [![Status: MVP Complete](https://img.shields.io/badge/Status-MVP_Complete_(Milestones_1--5)-7C3AED.svg?style=flat-square)](#)
 [![Live Demo on Vercel](https://img.shields.io/badge/Live_Demo-lingualens--fhpq.vercel.app-000000?style=flat-square&logo=vercel&logoColor=white)](https://lingualens-fhpq.vercel.app)
+[![Query Lab](https://img.shields.io/badge/Query_Lab-Interactive_Search-7C3AED?style=flat-square&logo=search&logoColor=white)](https://lingualens-fhpq.vercel.app/query-lab)
 [![GitHub Repository](https://img.shields.io/badge/GitHub-snigdhaurmiurma%2Flingualens-181717?style=flat-square&logo=github)](https://github.com/snigdhaurmiurma/lingualens)
 [![Python: 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![Next.js: 14+](https://img.shields.io/badge/Next.js-14.2-000000?style=flat-square&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
@@ -17,9 +18,19 @@
 
 An empirical evaluation framework and interactive diagnostic workbench designed to quantify cross-lingual retrieval degradation, subword token fragmentation, and transliteration penalties across diverse writing systems.
 
-[Live Demo](https://lingualens-fhpq.vercel.app) • [Architecture](#3-system-architecture) • [Supported Languages](#5-supported-languages) • [Model Registry](#6-model-adapter-registry) • [Evaluation Metrics](#7-evaluation-metrics--fairness-formulation) • [Getting Started](#10-installation--quick-start) • [Verification](#12-automated-testing--verification-results)
+[Live Demo](https://lingualens-fhpq.vercel.app) • [Query Lab](https://lingualens-fhpq.vercel.app/query-lab) • [Architecture](#3-system-architecture) • [Supported Languages](#5-supported-languages) • [Model Registry](#6-model-adapter-registry) • [Evaluation Metrics](#7-evaluation-metrics--fairness-formulation) • [Getting Started](#10-installation--quick-start) • [Verification](#12-automated-testing--verification-results)
 
 </div>
+
+---
+
+## 🌐 Live Deployment & Interactive Access
+
+| Resource | Direct URL | Description |
+|---|---|---|
+| 🚀 **Live Web Platform** | **[lingualens-fhpq.vercel.app](https://lingualens-fhpq.vercel.app)** | Production Next.js 14 research dashboard with live UI telemetry and model cards. |
+| 🔍 **Multilingual Query Lab** | **[lingualens-fhpq.vercel.app/query-lab](https://lingualens-fhpq.vercel.app/query-lab)** | Interactive semantic search playground across English, Bengali, Banglish, Hindi, and Arabic. |
+| 📦 **GitHub Repository** | **[github.com/snigdhaurmiurma/lingualens](https://github.com/snigdhaurmiurma/lingualens)** | Complete open-source codebase, architecture documentation, and test suites. |
 
 ---
 
