@@ -87,13 +87,15 @@ export function Header() {
             {isChecking && !health
               ? "Checking Gateway..."
               : health && health.status === "healthy"
-              ? "Gateway Connected"
+              ? health.database === "connected"
+                ? "Gateway Connected"
+                : "Showcase Benchmark"
               : "Gateway Offline"}
           </span>
 
           {health && (
             <span className="text-[10px] font-mono text-muted-foreground border-l border-border pl-1.5 ml-0.5">
-              DB: {health.database}
+              {health.database === "connected" ? "Live API" : "Interactive"}
             </span>
           )}
 

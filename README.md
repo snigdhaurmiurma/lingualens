@@ -338,6 +338,9 @@ python -m venv .venv
 # Install backend dependencies
 pip install -r requirements.txt
 
+# Seed benchmark corpus and pre-compute dense embeddings
+python seed_data.py
+
 # Start FastAPI server on port 8000
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
