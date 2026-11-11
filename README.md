@@ -6,6 +6,7 @@
 ### Multilingual Search Fairness & Semantic Evaluation Platform
 
 [![Status: MVP Complete](https://img.shields.io/badge/Status-MVP_Complete_(Milestones_1--5)-7C3AED.svg?style=flat-square)](#)
+[![GitHub Repository](https://img.shields.io/badge/GitHub-snigdhaurmiurma%2Flingualens-181717?style=flat-square&logo=github)](https://github.com/snigdhaurmiurma/lingualens)
 [![Python: 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![Next.js: 14+](https://img.shields.io/badge/Next.js-14.2-000000?style=flat-square&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
@@ -161,6 +162,11 @@ flowchart TD
     M --> N["Present Verified Evaluation Report & SERP Inspection"]
 ```
 
+### Visual Pipeline State Transitions
+The interactive graphic below illustrates how user input transitions across the four stages of the evaluation engine:
+
+![LinguaLens Pipeline State Transitions](docs/assets/workflow-transitions.svg)
+
 ---
 
 ## 5. Supported Languages & Scripts
@@ -255,7 +261,7 @@ All ranking metrics operate on ranked candidate lists evaluated against relevanc
 
 ## 9. Application Interface & Screenshots
 
-### Research Dashboard
+### Live Research Dashboard
 The primary dashboard provides immediate operational visibility into API connectivity, registered embedding models, corpus benchmarks, and CPU execution parameters:
 
 ![LinguaLens Overview Dashboard](docs/assets/dashboard-overview.jpg)
@@ -264,6 +270,11 @@ The primary dashboard provides immediate operational visibility into API connect
 * **Model Catalog Grid:** Real-time inspection of dimensions, context lengths, and prompt prefix rules.
 * **Corpus & Experiment Counters:** Live metadata aggregation directly queried from database tables.
 * **Graceful Degradation:** Built-in empty and error state handling whenever the backend is offline.
+
+### Multilingual Pipeline Walkthrough
+The state transition progression illustrates how semantic queries are decomposed into subword fragments, mapped to 384-dimensional dense vectors, retrieved via exact cosine search, and evaluated for cross-lingual disparity:
+
+![LinguaLens Pipeline State Transitions](docs/assets/workflow-transitions.svg)
 
 ---
 
@@ -278,7 +289,7 @@ The primary dashboard provides immediate operational visibility into API connect
 
 ### Step 1: Clone the Repository
 ```powershell
-git clone https://github.com/<your-username>/lingualens.git
+git clone https://github.com/snigdhaurmiurma/lingualens.git
 cd lingualens
 ```
 
